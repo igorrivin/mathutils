@@ -1,0 +1,8 @@
+jax
+optax
+flax
+matplotlib
+numpy
+pillow
+jax-cosmo
+plotly
