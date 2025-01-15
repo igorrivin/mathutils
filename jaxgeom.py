@@ -5,8 +5,7 @@ import jax.numpy as jnp
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
-import pyvista as pv
-import jax_cosmo.scipy.interpolate as jci
+from funcutils import transform_knot
 
 def get_uvec2(f):
   tanvec = jit(jacfwd(f))
@@ -18,7 +17,7 @@ def get_cvec(f):
 def get_cvec2(tt):
   return get_uvec2(tt)
 
-def traprulej(x, y):
+""" def traprulej(x, y):
   ar1 = x[1:] * y[1:]
   ar2 = y[1:] * x[:-1]
   ar3 = x[:-1] * y[:-1]
@@ -77,7 +76,7 @@ def get_total_curvature(f, a, b, num_points = 100):
   cfunc = get_curvature(f)
   knots = jnp.linspace(a, b, num_points)
   return traprulej(knots, vmap(cfunc)(knots))[-1]
-
+ """
 def get_frame(f):
   tt = get_uvec2(f)
   tt2 = get_cvec2(tt)
@@ -122,9 +121,9 @@ def get_gridb(f, eps):
     return base + eps * r * get_point(frame, s)
   return grid
 
-@partial(jit, static_argnames=['f', 'num1', 'num2'])
-def get_reg_grid(f, num1, num2, eps):
-  tarray = jnp.linspace(start = 0.0, stop = 1.0, num = num1)
+#@partial(jit, static_argnames=['f', ])
+def get_reg_grid(f, num1, num2, l,eps):
+  tarray = jnp.linspace(start = 0.0, stop = l, num = num1)
   sarray = jnp.linspace(start = 0.0, stop = 2 * jnp.pi, num = num2)
   g = get_grid(f, eps)
   g = vmap(g, in_axes=(None, 0))
@@ -227,3 +226,13 @@ def grid_to_trimesh(vertices, num1, num2):
     # Create the mesh
     mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
     return mesh
+
+def grid2d_to_trimesh(vertices):
+  verts = np.asarray(vertices)
+  n1, n2 , _ = verts.shape
+  return grid_to_trimesh(verts.reshape(n1*n2, 3), n1, n2)
+
+def make_nice_grid(f, num1= 100, num2=20, gauge = 0.01, a=0.0, b=1.0, eps = 0.1):
+  from funcutils import transform_knot, make_discrete_tube_surf
+  newf, a, b, num = transform_knot(f, gauge, a, b, num1)
+  newgrid = make_discrete_tube_surf(newf, a, b, num, num2, eps=eps)

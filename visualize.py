@@ -59,3 +59,7 @@ def visualize_evolution(trajectory,save_int = 100, interval=50):
     
     # Return HTML object for Jupyter display
     return HTML(anim.to_jshtml())
+
+def visualize_trajectory(trajectory, save_int = 100, interval=50):
+    pts_history = trajectory[1]
+    visualize_evolution(pts_history, save_int = save_int, interval=interval)
