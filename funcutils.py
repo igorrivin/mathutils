@@ -24,12 +24,23 @@ def traprulej(x, y):
   ar = jnp.cumsum(ar1 - ar2 - ar3 + ar4)
   return jnp.concatenate([np.array([0]), ar])/2
 
+# Core logic function (no jit)
+def do_inverse_core(func, beg=0.0, end=1.0, num_points=100):
+    xes = jnp.linspace(beg, end, num_points)
+    ys = vmap(func)(xes)
+    interp = jci.InterpolatedUnivariateSpline(ys, xes)
+    return interp
+
+# Wrapper that applies jit
 @jit
-def do_inverse(func, beg=0.1, end = 1.0, num_points =100):
-  xes = jnp.linspace(beg, end, num_points)
-  ys = vmap(func)(xes)
-  interp = jci.InterpolatedUnivariateSpline(ys, xes)
-  return jit(interp)
+def do_inverse(func, beg=0.0, end=1.0, num_points=100):
+    return do_inverse_core(func, beg, end, num_points)
+
+# def do_inverse(func, beg=0.1, end = 1.0, num_points =100):
+#   xes = jnp.linspace(beg, end, num_points)
+#   ys = vmap(func)(xes)
+#   interp = jci.InterpolatedUnivariateSpline(ys, xes)
+#   return jit(interp)
 
 def get_tangent(f):
    # return a function which evaluates the tangent at its argument.
@@ -101,20 +112,22 @@ def get_arclength_d(f):
 
 
 def get_arclength(f, beg=0.0, end=1.0, num_points = 100):
+  #print(f"num_points = {num_points}")
   deriv = get_arclength_d(f)
   xvals = jnp.linspace(beg, end, num_points)
   yvals = vmap(deriv)(xvals)
   intvals = traprulej(xvals, yvals)
   interp = jci.InterpolatedUnivariateSpline(xvals, intvals)
-  return jit(interp)
+  return interp
 
 def get_arclength_inv(f, beg=0.0, end = 1.0, num_points = 100):
-  return jit(do_inverse(get_arclength(f, beg=beg, end=end, num_points = num_points)))
+    return do_inverse_core(get_arclength(f, beg=beg, end=end, num_points = num_points))
 
 def parametrized_by_arclength(f, beg=0.0, end = 1.0, num_points = 100):
+  newend = get_arclength(f)(end)-get_arclength(f)(beg)
   def thefunc(x):
-    return f(get_arclength_inv(f, beg=beg, end=end, num_points = num_points)(x))
-  return jit(thefunc)
+    return f(get_arclength_inv(f, beg=0.0, end=newend, num_points = num_points)(x))
+  return jit(thefunc), newend
 
 def get_total_curvature(f, a, b, num_points = 100):
   cfunc = get_curvature(f)
@@ -137,11 +150,46 @@ def rescale_points(points):
   ad = average_distance(points)
   return points/ad
 
-def transform_knot(func, gauge=0.01, a=0.0, b=1.0, init_points = 100):
+def transform_knot(func, gauge=0.01, a=0.0, b=1.0, init_points = 100, tolerance=0.01):
   arcfunc = get_arclength(func, beg=a, end=b, num_points = init_points)
   totallength = arcfunc(b)
-  num = jnp.round(totallength/gauge)
-  newfunc = parametrized_by_arclength(func, beg=a, end=b, num_points=num)
-  return newfunc, 0, float(totallength), int(num)
+  num = int(jnp.round(totallength/gauge))
+  newfunc, _ = parametrized_by_arclength(func, beg=a, end=b, num_points=num)
+  arcfunc = jit(get_arclength(newfunc, beg=a, end=b, num_points = num))
+  if arcfunc(totallength) - totallength > tolerance:
+    totallength = arcfunc(b)
+    newfunc = parametrized_by_arclength(newfunc, beg = 0, end = totallength, num_points = 2 * num)
+    arcfunc = jit(get_arclength(newfunc, beg=0, end=totallength, num_points = 2 * num))
+  return newfunc, 0, float(totallength), int(totallength/gauge)
+    
 
-  
+from jax.numpy.fft import rfft, rfftfreq
+
+def make_approx(xes, ys, a, b):
+  period = (b-a)
+  howmany = len(xes)
+  gauge = xes[1] - xes[0]
+  rescaled = ys * 2 * jnp.pi / period
+  thefft = rfft(rescaled)/howmany
+  freqs = rfftfreq(howmany, d = gauge)
+  constterm = thefft[0].real
+  realfreqs = freqs[1:] * period
+  coscoefs = 2 * thefft[1:].real
+  sincoefs = -2 * thefft[1:].imag
+  l2norm = jnp.sqrt(constterm**2 + jnp.sum(coscoefs**2 + sincoefs**2))
+  def approx_func(x):
+    return constterm + jnp.sum(coscoefs * jnp.cos(realfreqs * x) + sincoefs * jnp.sin(realfreqs * x))
+  return constterm, coscoefs, sincoefs, realfreqs, l2norm, approx_func
+
+def approx_func(func, a, b, num_points=100):
+  xes = jnp.linspace(a, b, num_points, endpoint=False)
+  ys = vmap(func)(xes)
+  return make_approx(xes, ys, a, b)
+
+def l2norms(func, a, b, num_points = 100):
+   thenorms = []
+   for i in range(3):
+      thefunc = lambda x: func(x)[i]
+      _, _, _, _, l2norm, _ = approx_func(thefunc, a, b, num_points)
+      thenorms.append(l2norm)
+   return thenorms

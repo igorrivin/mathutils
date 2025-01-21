@@ -56,7 +56,7 @@ def visualize_evolution(trajectory,save_int = 100, interval=50):
     # Create animation
     anim = FuncAnimation(fig, update, frames=len(trajectory),
                         interval=interval, blit=True)
-    
+    anim.save("animation.gif", writer="pillow", fps=20) 
     # Return HTML object for Jupyter display
     return HTML(anim.to_jshtml())
 

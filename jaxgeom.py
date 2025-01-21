@@ -177,12 +177,12 @@ def make_rand_knot(decay, l):
   return make_ser
 
 def make_trefoil():
-  tp = 2 * jnp.pi
+  tp = 1
   return lambda t: jnp.array([jnp.sin(tp * t) + 2 * jnp.sin(2 * tp*t), jnp.cos(tp*t) - 2 * jnp.cos(2 * tp*t), -jnp.sin(3*tp*t)])
 
 
 def make_fig8():
-  tp = 2 * jnp.pi
+  tp = 1
   return lambda t: jnp.array([(2+jnp.cos(2*tp*t))* jnp.cos(3*tp*t), (2 + jnp.cos(2*tp*t))*jnp.sin(3*tp*t), jnp.sin(4*tp*t)])
 
   
