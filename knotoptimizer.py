@@ -1,13 +1,13 @@
 import numpy as np
 import jax
 import jax.numpy as jnp 
-from flax.struct import dataclass
+from dataclasses import dataclass
 from jax import jit, vmap
 from jax import lax
 import optax
 from funcutils import rescale_points, transform_knot
 import faiss
-
+from jax import tree_util
 
 def get_faiss_indices(points, k=10):
     # Create a flat index
@@ -28,8 +28,15 @@ class Physics:
     spring_constant: float = 1.0
     repulsion_strength: float = 10.0
     epsilon: float = 1e-6
+    def __hash__(self):
+        return hash(tuple(vars(self).values()))
 
-@jit
+tree_util.register_pytree_node(
+    Physics,
+    lambda obj: ((), (obj.spring_constant, obj.repulsion_strength, obj.epsilon)),
+    lambda aux, _: Physics(*aux)
+)
+
 def spring_potential(points):
     """
     Compute spring potential between adjacent points with unit target length.
@@ -61,25 +68,48 @@ def make_surface_potential(func):
     
 
 
-@jit
-def repulsion_potential(points, physics : Physics):
-    """Compute repulsion potential between all pairs of points"""
+# @jit
+# def repulsion_potential(points, physics : Physics):
+#     """Compute repulsion potential between all pairs of points"""
+#     n = points.shape[0]
+
+#     # Compute pairwise distances using broadcasting
+#     diffs = jnp.expand_dims(points, axis=0) - jnp.expand_dims(points, axis=1)  # n x n x 3
+#     distances_squared = jnp.sum(diffs * diffs, axis=2)  # n x n
+#     distances = jnp.sqrt(distances_squared)
+#     # Create mask for self-interactions
+#     mask = ~jnp.eye(n, dtype=bool)
+
+#     # Compute repulsion (inverse square law)
+#     # Add small epsilon to avoid division by zero
+#     repulsion = mask / (distances + 1e-6)
+
+#     # Return normalized repulsion potential
+#     return physics.repulsion_strength * jnp.sum(repulsion) / (n * (n - 1))
+
+from functools import partial
+
+@partial(jit, static_argnames=[ "physics"])
+
+def repulsion_potential(points, physics):
     n = points.shape[0]
 
-    # Compute pairwise distances using broadcasting
-    diffs = jnp.expand_dims(points, axis=0) - jnp.expand_dims(points, axis=1)  # n x n x 3
-    distances_squared = jnp.sum(diffs * diffs, axis=2)  # n x n
+    def body(i, val):
+        # Compute pairwise differences for all points
+        diffs = points - points[i]  # Broadcast points[i] to all rows
+        distances = jnp.sqrt(jnp.sum(diffs**2, axis=1))  # Compute distances
 
-    # Create mask for self-interactions
-    mask = ~jnp.eye(n, dtype=bool)
+        # Mask out invalid distances (i.e., j <= i)
+        mask = jnp.arange(n) > i
+        masked_distances = jnp.where(mask, distances, jnp.inf)  # Use `inf` to ignore
 
-    # Compute repulsion (inverse square law)
-    # Add small epsilon to avoid division by zero
-    repulsion = mask / (distances_squared + 1e-6)
+        # Compute potentials
+        potentials = 1 / (masked_distances + physics.epsilon)
+        return val + jnp.sum(potentials)
 
-    # Return normalized repulsion potential
-    return physics.repulsion_strength * jnp.sum(repulsion) / (n * (n - 1))
-
+    # Use fori_loop for efficiency
+    total_potential = 2.0 * physics.repulsion_strength * lax.fori_loop(0, n, body, 0.0) / (n * (n - 1))
+    return total_potential
 @jit
 def loss_function(points, physics):
     """Sum of the spring potential and repulsion potential"""
@@ -93,7 +123,13 @@ class OptimizationState:
     points: jnp.ndarray
     opt_state: optax.OptState
 
-
+# Register OptimizationState as a PyTree
+tree_util.register_pytree_node(
+    OptimizationState,
+    # Flatten function
+    lambda obj: ((obj.points, obj.opt_state), ()),
+    # Unflatten function
+    lambda aux, children: OptimizationState(*children))
 
 def make_optimizer(
     points: jnp.array,
@@ -129,9 +165,9 @@ class Optimizer:
     def compute_loss(points, physics: Physics):
         """Example loss function."""
         return physics.spring_constant * Optimizer.linear_potential(points) +  repulsion_potential(points, physics)
+        #return  Optimizer.linear_potential(points)
 
     @staticmethod
-    @jax.jit
     def compute_sparse_loss(points, physics: Physics):
         """Example loss function."""
         return physics.spring_constant * Optimizer.linear_potential(points) + physics.repulsion_strength *Optimizer.compute_sparse_repulsion(points)
@@ -144,6 +180,7 @@ class Optimizer:
                 return Optimizer.compute_loss(points, physics)
 
             loss, grads = jax.value_and_grad(loss_fn)(state.points)
+            print(loss, grads)
             updates, opt_state = optimizer.update(grads, state.opt_state)
             points = optax.apply_updates(state.points, updates)
 
@@ -162,7 +199,7 @@ class Optimizer:
         @jit
         def epoch_loss(points):
             def potential(i, j):
-                return 1 / (jnp.linalg.norm(points[i] - points[j]) ** 2+ epsilon)
+                return 1 / (jnp.linalg.norm(points[i] - points[j]) + epsilon)
             
             potentials = vmap(potential)(index_pairs[:, 0], index_pairs[:, 1])
             return jnp.sum(potentials)
@@ -205,7 +242,9 @@ class Optimizer:
 #state, loss_history = Optimizer.run_epoch(state, physics, optimizer, num_steps=100)
 
 def optimize_knot(func, *, linear_potential = spring_potential, sparse = False, gauge=0.01, a=0.0, b=1.0, init_points = 100, spring_constant=1.0, repulsion_strength=10.0, learning_rate=0.01, num_steps=100):
-  newfunc, a, b, num = transform_knot(func, gauge, a, b, init_points)
+  #newfunc, a, b, num = transform_knot(func, gauge, a, b, init_points)
+  newfunc = func
+  num = init_points
   knotpoints = vmap(newfunc)(jnp.linspace(a, b, num))
   Optimizer.linear_potential = linear_potential
   state, physics, optimizer = make_optimizer(knotpoints, spring_constant=spring_constant, repulsion_strength=repulsion_strength, learning_rate=learning_rate)
@@ -214,3 +253,10 @@ def optimize_knot(func, *, linear_potential = spring_potential, sparse = False, 
   else:
     state, loss_history = Optimizer.run_epoch(state, physics, optimizer, num_steps=num_steps)
   return state.points, loss_history
+
+def surface_projection(func, *, num_points = 1000, num_steps = 1000, spring_constant=1.0, repulsion_strength=0.001, learning_rate=0.01 ):
+    newfunc = make_surface_potential(func)
+    Optimizer.linear_potential = newfunc
+    state, physics, optimizer = make_optimizer(newfunc, spring_constant=spring_constant, repulsion_strength=repulsion_strength, learning_rate=learning_rate)
+    state, loss_history = Optimizer.run_sparse_epoch(state, physics, optimizer, num_steps=num_steps)
+    return state.points, loss_history

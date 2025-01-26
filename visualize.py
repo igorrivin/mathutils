@@ -63,3 +63,68 @@ def visualize_evolution(trajectory,save_int = 100, interval=50):
 def visualize_trajectory(trajectory, save_int = 100, interval=50):
     pts_history = trajectory[1]
     visualize_evolution(pts_history, save_int = save_int, interval=interval)
+
+
+import open3d as o3d
+import time
+
+def visualize_trajectory_o3d(trajectory,  *, skip = 1, delay = 0.05):
+    pts_history = np.asarray(trajectory[1])
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(pts_history[0])
+    vis = o3d.visualization.Visualizer()
+    vis.create_window()
+    vis.add_geometry(pcd)
+    for i in range(0, pts_history.shape[0], skip):
+        new_points = pts_history[i]
+        # Update points (simulate optimization)
+        
+        pcd.points = o3d.utility.Vector3dVector(new_points)
+
+        # Update the visualizer
+        vis.update_geometry(pcd)
+        vis.poll_events()
+        vis.update_renderer()
+
+        # Slow down for visibility
+        time.sleep(delay)
+
+    # Close the visualizer
+    vis.destroy_window
+
+
+def visualize_alpha_o3d(points, delay = 0.05):
+    vis = o3d.visualization.Visualizer()
+    vis.create_window()
+
+    alpha = 0.1
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(points)
+
+    tetra_mesh, pt_map = o3d.geometry.TetraMesh.create_from_point_cloud(pcd)
+    mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(pcd, alpha)
+
+    # Add the initial geometry to the visualizer
+    vis.add_geometry(mesh)
+
+    # Simulate evolution by varying alpha
+    for alpha in np.linspace(0.05, 1.0, 20):
+        # Generate a new alpha shape
+        new_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(pcd, alpha)
+
+        # Update the visualizer
+        vis.remove_geometry(mesh)  # Remove the old mesh
+        mesh = new_mesh  # Update the reference to the new mesh
+        vis.add_geometry(mesh)  # Add the new mesh
+
+        vis.poll_events()
+        vis.update_renderer()
+
+        # Pause to simulate evolution
+        time.sleep(delay)
+
+    # Close the visualizer
+    vis.destroy_window()
+    return tetra_mesh, pt_map
+
+ 

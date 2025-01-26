@@ -1,5 +1,28 @@
 import torch
 
+
+from pykeops.torch import LazyTensor
+
+
+
+def repulsion_potential_k(x, epsilon=1e-6):
+  N, D = x.shape
+  # Create LazyTensors
+  x_i = LazyTensor(x.view(N, 1, D))
+  x_j = LazyTensor(x.view(1, N, D))
+  # q_i = LazyTensor(q.view(N, 1, 1))
+  #q_j = LazyTensor(q.view(1, N, 1))
+
+  D_ij = ((x_i - x_j)**2).sum(dim=2)
+  mask = (D_ij != 0)
+  # Compute distances and potential in one step
+  #R_ij = ((x_i - x_j)**2).sum(dim=2).sqrt()
+  V_ij = 1.0/ (D_ij.sqrt() + epsilon) * mask
+  #V_ij = 1.0/ (R_ij + epsilon)
+
+  # Compute total potential
+  V_total = V_ij.sum(dim=1).sum()
+  return V_total/N/(N-1)
 # Define the surface function (e.g., unit sphere: x^2 + y^2 + z^2 - 1 = 0)
 def surface_function(points):
     x, y, z = points[:, 0], points[:, 1], points[:, 2]
@@ -34,7 +57,7 @@ for epoch in range(1000):
 
     # Compute losses
     surface_loss_value = surface_loss(points)
-    repulsion_value = repulsion_potential(points)
+    repulsion_value = repulsion_potential_k(points)
     total_loss = surface_loss_value + lambda_reg * repulsion_value
 
     # Backpropagation and optimization

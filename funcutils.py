@@ -108,7 +108,7 @@ def get_arclength_d(f):
   def foo(x):
     v = get_tangent(f)(x)
     return jnp.linalg.norm(v)
-  return jit(foo)
+  return foo
 
 
 def get_arclength(f, beg=0.0, end=1.0, num_points = 100):
@@ -193,3 +193,54 @@ def l2norms(func, a, b, num_points = 100):
       _, _, _, _, l2norm, _ = approx_func(thefunc, a, b, num_points)
       thenorms.append(l2norm)
    return thenorms
+
+
+
+def htorus(x, y, z, n, r):
+    """
+    Compute the value of the function h(x, y, z) that defines the level set for an n-torus in R^3.
+
+    Parameters:
+    x (float or np.ndarray): x-coordinate(s)
+    y (float or np.ndarray): y-coordinate(s)
+    z (float or np.ndarray): z-coordinate(s)
+    n (int): The number of loops in the n-torus
+    r (float): The radius parameter for inflating the loops
+
+    Returns:
+    float or np.ndarray: The value(s) of h(x, y, z) at the given points
+    """
+    # Define the polynomial f(x)
+    def f(x):
+        result = x * (x - n)  # Start with the term x(x-n)
+        for i in range(1, n):
+            result *= (x - i) ** 2
+        return result
+
+    # Define g(x, y) = f(x) + y^2
+    def g(x, y):
+        return f(x) + y**2
+
+    # Define h(x, y, z) = g(x, y)^2 + z^2 - r^2
+    return g(x, y)**2 + z**2 - r**2
+
+# # Example usage:
+# n = 2
+# r = 0.1
+# x, y, z = 1.0, 0.5, 0.2
+# value = htorus(x, y, z, n, r)
+# print("h(x, y, z) =", value)
+
+import jax.numpy as jnp
+from jax import lax
+
+@jit
+def upper_triangle_sum(matrix):
+    n = matrix.shape[0]
+
+    def body(i, val):
+        # Accumulate the sum of the elements in the i-th row, starting from the (i+1)-th column
+        return val + jnp.sum(matrix[i, i + 1:])
+
+    # Start the loop with initial value 0
+    return lax.fori_loop(0, n, body, 0)
