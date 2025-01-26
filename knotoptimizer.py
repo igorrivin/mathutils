@@ -241,18 +241,26 @@ class Optimizer:
 
 #state, loss_history = Optimizer.run_epoch(state, physics, optimizer, num_steps=100)
 
-def optimize_knot(func, *, linear_potential = spring_potential, sparse = False, gauge=0.01, a=0.0, b=1.0, init_points = 100, spring_constant=1.0, repulsion_strength=10.0, learning_rate=0.01, num_steps=100):
+def optimize_knot(func, *, linear_potential = spring_potential, sparse = False, gauge=0.01, a=0.0, b=1.0, init_points = 100, spring_constant=1.0, repulsion_strength=10.0, learning_rate=0.01, num_steps=100, num_epochs = 100):
   #newfunc, a, b, num = transform_knot(func, gauge, a, b, init_points)
   newfunc = func
   num = init_points
   knotpoints = vmap(newfunc)(jnp.linspace(a, b, num))
   Optimizer.linear_potential = linear_potential
-  state, physics, optimizer = make_optimizer(knotpoints, spring_constant=spring_constant, repulsion_strength=repulsion_strength, learning_rate=learning_rate)
-  if sparse:
-    state, loss_history = Optimizer.run_sparse_epoch(state, physics, optimizer, num_steps=num_steps)
-  else:
-    state, loss_history = Optimizer.run_epoch(state, physics, optimizer, num_steps=num_steps)
-  return state.points, loss_history
+  loss_list = [ ]
+  for _ in range(num_epochs):
+    state, physics, optimizer = make_optimizer(knotpoints, spring_constant=spring_constant, repulsion_strength=repulsion_strength, learning_rate=learning_rate)
+    if sparse:
+      state, loss_history = Optimizer.run_sparse_epoch(state, physics, optimizer, num_steps=num_steps)
+    else:
+      state, loss_history = Optimizer.run_epoch(state, physics, optimizer, num_steps=num_steps)
+    print(loss_history[-1])
+    knotpoints = state.points
+    loss_list.append(loss_history)
+  loss_histories = jnp.concatenate([x[0] for x in loss_list])
+  trajectory = jnp.concatenate([x[1] for x in loss_list])
+  return knotpoints, (loss_histories, trajectory)
+  
 
 def surface_projection(func, *, num_points = 1000, num_steps = 1000, spring_constant=1.0, repulsion_strength=0.001, learning_rate=0.01 ):
     newfunc = make_surface_potential(func)
