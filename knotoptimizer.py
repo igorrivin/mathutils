@@ -8,8 +8,11 @@ import optax
 from funcutils import rescale_points, transform_knot
 import faiss
 from jax import tree_util
+from graphutils import make_edges
 
 def get_faiss_indices(points, k=10):
+    howmany = points.shape[0]
+    k = min(k, howmany)
     # Create a flat index
     index = faiss.IndexFlatL2(points.shape[1])   
     # Add the points to the index
@@ -36,6 +39,16 @@ tree_util.register_pytree_node(
     lambda obj: ((), (obj.spring_constant, obj.repulsion_strength, obj.epsilon)),
     lambda aux, _: Physics(*aux)
 )
+
+def make_potential(graph):
+    e = make_edges(graph)
+    begs = jnp.array([x[0] for x in e])
+    ends = jnp.array([x[1] for x in e])
+    def potential(points):
+        diffs = points[begs] - points[ends]
+        distances = jnp.linalg.norm(diffs, axis=1)
+        return jnp.mean((distances - 1.0) ** 2)
+    return potential
 
 def spring_potential(points):
     """
@@ -268,3 +281,19 @@ def surface_projection(func, *, num_points = 1000, num_steps = 1000, spring_cons
     state, physics, optimizer = make_optimizer(newfunc, spring_constant=spring_constant, repulsion_strength=repulsion_strength, learning_rate=learning_rate)
     state, loss_history = Optimizer.run_sparse_epoch(state, physics, optimizer, num_steps=num_steps)
     return state.points, loss_history
+
+
+def optimize_graph(graph, *, num_epochs = 10, num_steps = 100, spring_constant=1.0, repulsion_strength=0.1, learning_rate = 0.01):
+    Optimizer.linear_potential = make_potential(graph)
+    num_nodes = len(graph)
+    points = jnp.array(np.random.rand(num_nodes, 3))
+    loss_list = []
+    
+    for _ in range(num_epochs):
+        state, physics, optimizer = make_optimizer(points, spring_constant=spring_constant, repulsion_strength=repulsion_strength, learning_rate=learning_rate)
+        state, loss_history = Optimizer.run_sparse_epoch(state, physics, optimizer, num_steps=num_steps)
+        loss_list.append(loss_history)
+        points = state.points
+    loss_histories = jnp.concatenate([x[0] for x in loss_list])
+    trajectory = jnp.concatenate([x[1] for x in loss_list])
+    return points, (loss_histories, trajectory)
