@@ -316,7 +316,8 @@ def stupid_umap(points, num_neighbors = 10, num_epochs = 10, num_steps = 100, sp
     points = jnp.array(np.random.rand(num_nodes, 2))
     loss_list = []
     
-    for _ in range(num_epochs):
+    for i in range(num_epochs):
+        print(i)
         state, physics, optimizer = make_optimizer(points, spring_constant=spring_constant, repulsion_strength=repulsion_strength, learning_rate=learning_rate)
         state, loss_history = Optimizer.run_sparse_epoch(state, physics, optimizer, num_steps=num_steps)
         loss_list.append(loss_history)
