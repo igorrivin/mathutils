@@ -19,6 +19,17 @@ def get_knn_indices(points, k=10):
     howmany = points.shape[0]
     k = min(k, howmany)
 
+    def mung_neighbors(I):
+        I = I[:, 1:]  # Remove self-adjacency
+        print(I.shape)
+        row_indices = jnp.arange(num_queries).reshape(-1, 1)  # Column vector
+        row_indices = jnp.broadcast_to(row_indices, (num_queries, k))  # Expand
+        row_indices = row_indices.ravel()  # Flatten
+
+        col_indices = I.ravel()  # Flatten neighbors
+        index_pairs = jnp.column_stack((row_indices, col_indices)) 
+        return index_pairs
+    
     if has_cuda:
         # Ensure `points` is CuPy array (convert from JAX if needed)
         if isinstance(points, jnp.ndarray):
@@ -36,16 +47,8 @@ def get_knn_indices(points, k=10):
                                      k)
         #distances = cp.asarray(distances)
         #I = cp.asarray(neighbors)
-        I = np.asarray(neighbors)
-        I = I[:, 1:]  # Remove self-adjacency
-        print(I.shape)
-        num_queries, k = I.shape
-        row_indices = np.repeat(np.arange(num_queries), k)
-        col_indices = I.ravel()
-        index_pairs = np.column_stack((row_indices, col_indices))
-
-        # Return as JAX array (ensures compatibility)
-        return jnp.asarray(index_pairs)
+        I = jax.dlpack.from_dlpack(cp.asarray(neighbors))
+        return mung_neighbors(I)
         # Extract adjacency list as CuPy arrays (faster than cudf.DataFrame)
         #source = result["source"].values  # CuPy array
         #destination = result["destination"].values  # CuPy array
@@ -71,12 +74,7 @@ def get_knn_indices(points, k=10):
         index.add(points)
         D, I = index.search(points, k + 1)  # k+1 to remove self-adjacency
 
-        I = I[:, 1:]  # Remove self-adjacency
-        num_queries, k = I.shape
-        row_indices = np.repeat(np.arange(num_queries), k)
-        col_indices = I.ravel()
-        index_pairs = np.column_stack((row_indices, col_indices))
-
+        return mung_neighbors(I)
         # Return as JAX array (ensures compatibility)
         return jnp.asarray(index_pairs)
 

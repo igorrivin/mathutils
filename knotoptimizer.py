@@ -42,6 +42,8 @@ tree_util.register_pytree_node(
 )
 
 def make_streamlined( e):
+    print(type(e), len(e))  # Is it a list? A generator?
+    print(e[:5]) 
     begs = jnp.array([x[0] for x in e])
     ends = jnp.array([x[1] for x in e])
     def potential(points):
