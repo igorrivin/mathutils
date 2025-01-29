@@ -41,19 +41,30 @@ tree_util.register_pytree_node(
     lambda aux, _: Physics(*aux)
 )
 
-def pairwise_distance(points, i, j):
-    diff = points[i] - points[j]
-    return jnp.sqrt(jnp.sum(diff ** 2))
+# def pairwise_distance(points, i, j):
+#     diff = points[i] - points[j]
+#     return jnp.sqrt(jnp.sum(diff ** 2))
+
 
 
 def make_streamlined(e):
-    def pairwise_distance(points, edge):
+    def pairwise_potential(points, edge):
         diff = points[edge[0]] - points[edge[1]]
-        return jnp.sqrt(jnp.sum(diff ** 2))
+        return jnp.sqrt(jnp.sum(diff ** 2)-1.0) ** 2
 
-    return jax.jit(jax.vmap(lambda points: jnp.mean(
-        (jax.vmap(pairwise_distance, in_axes=(None, 1))(points, e) - 1.0) ** 2)
-    ))
+    def thepotential(points):
+      potarray = jax.vmap(pairwise_potential, in_axes=(None, 0))(points, e)
+      return jnp.mean(potarray)
+    return jax.jit(thepotential)
+
+# def make_streamlined(e):
+#     def pairwise_distance(points, edge):
+#         diff = points[edge[0]] - points[edge[1]]
+#         return jnp.sqrt(jnp.sum(diff ** 2))
+
+#     return jax.jit(jax.vmap(lambda points: jnp.mean(
+#         (jax.vmap(pairwise_distance, in_axes=(None, 1))(points, e) - 1.0) ** 2)
+#     ))
 
 
 def make_potential(graph):
