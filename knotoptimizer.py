@@ -9,6 +9,7 @@ from funcutils import rescale_points, transform_knot
 import faiss
 from jax import tree_util
 from graphutils import make_edges
+from knnutils import get_knn_indices
 
 def get_faiss_indices(points, k=10):
     howmany = points.shape[0]
@@ -39,6 +40,15 @@ tree_util.register_pytree_node(
     lambda obj: ((), (obj.spring_constant, obj.repulsion_strength, obj.epsilon)),
     lambda aux, _: Physics(*aux)
 )
+
+def make_streamlined( e):
+    begs = jnp.array([x[0] for x in e])
+    ends = jnp.array([x[1] for x in e])
+    def potential(points):
+        diffs = points[begs] - points[ends]
+        distances = jnp.linalg.norm(diffs, axis=1)
+        return jnp.mean((distances - 1.0) ** 2)
+    return potential
 
 def make_potential(graph):
     e = make_edges(graph)
@@ -205,10 +215,11 @@ class Optimizer:
         return state, loss_history
     
     @staticmethod
-    def create_epoch_loss_function(initial_points, physics: Physics):
+    def create_epoch_loss_function(initial_points, physics: Physics, num_neighbors = 10):
         """Create a function that computes the loss for a given set of points."""
         epsilon = physics.epsilon
-        index_pairs = jnp.array(get_faiss_indices(np.asarray(initial_points)))
+        #index_pairs = jnp.array(get_faiss_indices(np.asarray(initial_points)))
+        index_pairs = jnp.array(get_knn_indices(np.asarray(initial_points), k=num_neighbors))
         @jit
         def epoch_loss(points):
             def potential(i, j):
@@ -297,3 +308,17 @@ def optimize_graph(graph, *, num_epochs = 10, num_steps = 100, spring_constant=1
     loss_histories = jnp.concatenate([x[0] for x in loss_list])
     trajectory = jnp.concatenate([x[1] for x in loss_list])
     return points, (loss_histories, trajectory)
+
+def stupid_umap(points, num_neighbors = 10, num_epochs = 10, num_steps = 100, spring_constant=1.0, repulsion_strength=0.1, learning_rate = 0.01):
+    index_pairs = get_knn_indices(points, k=num_neighbors)
+    Optimizer.linear_potential = make_streamlined(index_pairs)
+    num_nodes = points.shape[0]
+    points = jnp.array(np.random.rand(num_nodes, 2))
+    loss_list = []
+    
+    for _ in range(num_epochs):
+        state, physics, optimizer = make_optimizer(points, spring_constant=spring_constant, repulsion_strength=repulsion_strength, learning_rate=learning_rate)
+        state, loss_history = Optimizer.run_sparse_epoch(state, physics, optimizer, num_steps=num_steps)
+        loss_list.append(loss_history)
+        points = state.points
+    return points
