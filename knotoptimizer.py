@@ -41,26 +41,24 @@ tree_util.register_pytree_node(
     lambda aux, _: Physics(*aux)
 )
 
-def make_streamlined( e):
-    print(type(e), len(e))  # Is it a list? A generator?
-    print(e[:5]) 
-    begs = jnp.array([x[0] for x in e])
-    ends = jnp.array([x[1] for x in e])
-    def potential(points):
-        diffs = points[begs] - points[ends]
-        distances = jnp.linalg.norm(diffs, axis=1)
-        return jnp.mean((distances - 1.0) ** 2)
-    return potential
+def pairwise_distance(points, i, j):
+    diff = points[i] - points[j]
+    return jnp.sqrt(jnp.sum(diff ** 2))
+
+
+def make_streamlined(e):
+    def pairwise_distance(points, edge):
+        diff = points[edge[0]] - points[edge[1]]
+        return jnp.sqrt(jnp.sum(diff ** 2))
+
+    return jax.jit(jax.vmap(lambda points: jnp.mean(
+        (jax.vmap(pairwise_distance, in_axes=(None, 1))(points, e) - 1.0) ** 2)
+    ))
+
 
 def make_potential(graph):
     e = make_edges(graph)
-    begs = jnp.array([x[0] for x in e])
-    ends = jnp.array([x[1] for x in e])
-    def potential(points):
-        diffs = points[begs] - points[ends]
-        distances = jnp.linalg.norm(diffs, axis=1)
-        return jnp.mean((distances - 1.0) ** 2)
-    return potential
+    return make_streamlined(e)
 
 def spring_potential(points):
     """
