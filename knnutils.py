@@ -22,6 +22,7 @@ def get_knn_indices(points, k=10):
     def mung_neighbors(I):
         I = I[:, 1:]  # Remove self-adjacency
         print(I.shape)
+        num_queris, k = I.shape
         row_indices = jnp.arange(num_queries).reshape(-1, 1)  # Column vector
         row_indices = jnp.broadcast_to(row_indices, (num_queries, k))  # Expand
         row_indices = row_indices.ravel()  # Flatten
