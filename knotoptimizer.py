@@ -48,14 +48,15 @@ tree_util.register_pytree_node(
 
 
 def make_streamlined(e):
+    e= jnp.array(e)
     def pairwise_potential(points, edge):
         diff = points[edge[0]] - points[edge[1]]
-        return jnp.sqrt(jnp.sum(diff ** 2)-1.0) ** 2
-
+        return (jnp.sqrt(jnp.sum(diff ** 2) + 1e-8) - 1.0) ** 2
+    @jit
     def thepotential(points):
       potarray = jax.vmap(pairwise_potential, in_axes=(None, 0))(points, e)
       return jnp.mean(potarray)
-    return jax.jit(thepotential)
+    return thepotential
 
 # def make_streamlined(e):
 #     def pairwise_distance(points, edge):
@@ -204,7 +205,10 @@ class Optimizer:
     @staticmethod
     def compute_sparse_loss(points, physics: Physics):
         """Example loss function."""
-        return physics.spring_constant * Optimizer.linear_potential(points) + physics.repulsion_strength *Optimizer.compute_sparse_repulsion(points)
+        linpot = Optimizer.linear_potential(points)
+        reppot = Optimizer.compute_sparse_repulsion(points)
+        return physics.spring_constant * linpot + physics.repulsion_strength *reppot
+        #return linpot
     @staticmethod
     def run_epoch(state, physics, optimizer, num_steps):
         """Run one epoch using lax.scan."""
