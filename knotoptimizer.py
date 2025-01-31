@@ -45,19 +45,56 @@ tree_util.register_pytree_node(
 #     diff = points[i] - points[j]
 #     return jnp.sqrt(jnp.sum(diff ** 2))
 
+# def sparse_spring_potential(points, edge):
+#         diff = points[edge[0]] - points[edge[1]]
+#         return (jnp.sqrt(jnp.sum(diff ** 2) + 1e-8) - 1.0) ** 2
+
+# def sparse_rep_potential(points, edge):
+#         diff = points[edge[0]] - points[edge[1]]
+#         return 1/(jnp.linalg.norm(diff) + 1e-8)
+
+# def make_streamlined(e, pairwise_potential):
+#     e= jnp.array(e)
+    
+#     @jit
+#     def thepotential(points):
+#       potarray = jax.vmap(pairwise_potential, in_axes=(None, 0))(points, e)
+#       return jnp.mean(potarray)
+#     return thepotential
 
 
-def make_streamlined(e):
-    e= jnp.array(e)
-    def pairwise_potential(points, edge):
-        diff = points[edge[0]] - points[edge[1]]
-        return (jnp.sqrt(jnp.sum(diff ** 2) + 1e-8) - 1.0) ** 2
-    @jit
+
+def sparse_rep_potential(distances):
+   return jnp.mean((distances - 1.0) ** 2)
+
+def sparse_spring_potential(distances):
+    return jnp.mean((distances - 1.0) ** 2)
+
+def make_streamlined(adj_list, local_func):
+    adj_list = jnp.array(adj_list)  # Ensure it's a JAX array
+
+    def row_potential(points, neighbors, i):
+        """Compute potential for one vertex and its neighbors."""
+        if len(neighbors) == 0:
+            return 0.0  # Avoid NoneType issues
+
+        vertex_pos = points[i]  # Center vertex
+        neighbor_pos = points[neighbors]  # Neighbor vertices
+
+        diffs = neighbor_pos - vertex_pos
+        distances = jnp.sqrt(jnp.sum(diffs ** 2, axis=1) + 1e-8)
+        
+        pot_value = local_func(distances)
+        return jnp.where(jnp.isnan(pot_value), 0.0, pot_value)  # Ensure no NaNs
+
+    @jax.jit
     def thepotential(points):
-      potarray = jax.vmap(pairwise_potential, in_axes=(None, 0))(points, e)
-      return jnp.mean(potarray)
-    return thepotential
+        """Compute total potential in parallel using `jax.vmap()`."""
+        row_indices = jnp.arange(adj_list.shape[0])  # Row indices
+        potentials = jax.vmap(row_potential, in_axes=(None, 0, 0))(points, adj_list, row_indices)  # Parallelize!
+        return jnp.mean(potentials)  # Normalize
 
+    return thepotential
 # def make_streamlined(e):
 #     def pairwise_distance(points, edge):
 #         diff = points[edge[0]] - points[edge[1]]
@@ -235,15 +272,8 @@ class Optimizer:
         epsilon = physics.epsilon
         #index_pairs = jnp.array(get_faiss_indices(np.asarray(initial_points)))
         index_pairs = jnp.array(get_knn_indices(np.asarray(initial_points), k=num_neighbors))
-        @jit
-        def epoch_loss(points):
-            def potential(i, j):
-                return 1 / (jnp.linalg.norm(points[i] - points[j]) + epsilon)
-            
-            potentials = vmap(potential)(index_pairs[:, 0], index_pairs[:, 1])
-            return jnp.sum(potentials)
         
-        Optimizer.compute_sparse_repulsion = epoch_loss
+        Optimizer.compute_sparse_repulsion = make_streamlined(index_pairs, sparse_rep_potential)
     
     @staticmethod
     def compute_sparse_repulsion(points, physics: Physics):
@@ -326,7 +356,7 @@ def optimize_graph(graph, *, num_epochs = 10, num_steps = 100, spring_constant=1
 
 def stupid_umap(points, num_neighbors = 10, num_epochs = 10, num_steps = 100, spring_constant=1.0, repulsion_strength=0.1, learning_rate = 0.01):
     index_pairs = get_knn_indices(points, k=num_neighbors)
-    Optimizer.linear_potential = make_streamlined(index_pairs)
+    Optimizer.linear_potential = make_streamlined(index_pairs, sparse_spring_potential)
     num_nodes = points.shape[0]
     points = jnp.array(np.random.rand(num_nodes, 2))
     loss_list = []

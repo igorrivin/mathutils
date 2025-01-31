@@ -49,7 +49,7 @@ def get_knn_indices(points, k=10):
         #distances = cp.asarray(distances)
         #I = cp.asarray(neighbors)
         I = jax.dlpack.from_dlpack(cp.asarray(neighbors))
-        return mung_neighbors(I)
+        return I
         # Extract adjacency list as CuPy arrays (faster than cudf.DataFrame)
         #source = result["source"].values  # CuPy array
         #destination = result["destination"].values  # CuPy array
@@ -75,7 +75,7 @@ def get_knn_indices(points, k=10):
         index.add(points)
         D, I = index.search(points, k + 1)  # k+1 to remove self-adjacency
 
-        return mung_neighbors(I)
+        return jnp.array(I)
         # Return as JAX array (ensures compatibility)
         return jnp.asarray(index_pairs)
 
