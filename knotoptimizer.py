@@ -384,8 +384,12 @@ def optimize_graph(graph, *, num_epochs = 10, num_steps = 100, spring_constant=1
     trajectory = jnp.concatenate([x[1] for x in loss_list])
     return points, (loss_histories, trajectory)
 
-def stupid_umap(points, num_neighbors = 10, num_epochs = 10, num_steps = 100, spring_constant=1.0, repulsion_strength=0.1, learning_rate = 0.01):
+def stupid_umap(points, num_neighbors = 10, num_epochs = 10, num_steps = 100, spring_constant=1.0, repulsion_strength=0.1, learning_rate = 0.01, use_distances = False):
     index_pairs, distances = get_knn_indices(points, k=num_neighbors)
+    if use_distances:
+        Optimizer.linear_potential = make_streamlined2(index_pairs, sparse_spring_potential2, distances)
+    else:
+        Optimizer.linear_potential = make_streamlined(index_pairs, sparse_spring_potential)
     Optimizer.linear_potential = make_streamlined(index_pairs, sparse_spring_potential)
     num_nodes = points.shape[0]
     points = jnp.array(np.random.rand(num_nodes, 2))
