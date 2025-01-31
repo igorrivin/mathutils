@@ -10,6 +10,7 @@ import faiss
 from jax import tree_util
 from graphutils import make_edges
 from knnutils import get_knn_indices
+from sklearn.decomposition import PCA
 
 def get_faiss_indices(points, k=10):
     howmany = points.shape[0]
@@ -385,14 +386,16 @@ def optimize_graph(graph, *, num_epochs = 10, num_steps = 100, spring_constant=1
     return points, (loss_histories, trajectory)
 
 def stupid_umap(points, num_neighbors = 10, num_epochs = 10, num_steps = 100, spring_constant=1.0, repulsion_strength=0.1, learning_rate = 0.01, use_distances = False):
+    points = np.ascontiguousarray(points.astype(np.float32))
     index_pairs, distances = get_knn_indices(points, k=num_neighbors)
+    points = jnp.array(PCA(n_components=2).fit_transform(points))
     if use_distances:
         Optimizer.linear_potential = make_streamlined2(index_pairs, sparse_spring_potential2, distances)
     else:
         Optimizer.linear_potential = make_streamlined(index_pairs, sparse_spring_potential)
     Optimizer.linear_potential = make_streamlined(index_pairs, sparse_spring_potential)
     num_nodes = points.shape[0]
-    points = jnp.array(np.random.rand(num_nodes, 2))
+    #points = jnp.array(np.random.rand(num_nodes, 2))
     loss_list = []
     
     for i in range(num_epochs):
