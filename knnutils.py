@@ -85,22 +85,56 @@ def get_knn_indices(points, k=10):
 
 import jax.random as random
 
-def generate_random_adj_list(num_points, k, key=random.PRNGKey(42)):
+# def generate_random_adj_list(num_points, k, key=random.PRNGKey(42)):
+#     """Generates a (num_points, k) adjacency list where:
+#        - Each row contains k unique neighbors.
+#        - No row contains its own index.
+#     """
+#     keys = random.split(key, num_points)  # Unique PRNG keys for each row
+#     row_indices = jnp.arange(num_points)  # ✅ Compute once outside vmap
+
+#     def sample_neighbors(i, key):
+#         """Samples k unique neighbors for row i, ensuring i is excluded."""
+#         offsets = random.choice(key, jnp.arange(1, num_points), shape=(k,), replace=False)  # ✅ Sample from {1, ..., n-1}
+#         neighbors = (i + offsets) % num_points  # ✅ Shift by i and take modulo num_points
+#         return neighbors
+
+#     adj_list = jax.vmap(sample_neighbors, in_axes = (0, 0))(row_indices, keys)  # ✅ Parallelized sampling
+#     return adj_list
+
+# # Example usage
+# num_points = 100
+# k = 5
+# key = random.PRNGKey(42)
+
+# adj_list = generate_random_adj_list(num_points, k, key)
+# print(adj_list)
+
+# # Example usage
+# num_points = 100
+# k = 5
+# key = random.PRNGKey(42)
+
+# adj_list = generate_random_adj_list(num_points, k, key)
+# print(adj_list)
+
+# # Example usage
+# if __name__ == "__main__":
+#     points = jnp.array(np.random.rand(100, 128).astype(np.float32))  # JAX-compatible input
+#     knn_result = get_knn_indices(points)
+#     print(knn_result.shape)
+
+
+
+def generate_random_adj_list(num_points, k, key):
     """Generates a (num_points, k) adjacency list where:
-       - Each row contains k unique neighbors.
-       - No row contains its own index.
+       - Each row contains k random neighbors.
+       - No row contains its own index (i.e., no self-loops).
     """
-    keys = random.split(key, num_points)  # Unique PRNG keys for each row
-    row_indices = jnp.arange(num_points)  # ✅ Compute once outside vmap
-
-    def sample_neighbors(i, key):
-        """Samples k unique neighbors for row i, ensuring i is excluded."""
-        offsets = random.choice(key, jnp.arange(1, num_points), shape=(k,), replace=False)  # ✅ Sample from {1, ..., n-1}
-        neighbors = (i + offsets) % num_points  # ✅ Shift by i and take modulo num_points
-        return neighbors
-
-    adj_list = jax.vmap(sample_neighbors, in_axes = (0, 0))(row_indices, keys)  # ✅ Parallelized sampling
-    return adj_list
+    rand_offsets = random.randint(key, shape=(num_points, k), minval=1, maxval=num_points)  # ✅ Random offsets (1 to num_points-1)
+    row_indices = jnp.arange(num_points).reshape(-1, 1)  # ✅ Shape (num_points, 1)
+    neighbors = (row_indices + rand_offsets) % num_points  # ✅ Ensures no self-loops
+    return neighbors
 
 # Example usage
 num_points = 100
@@ -109,17 +143,3 @@ key = random.PRNGKey(42)
 
 adj_list = generate_random_adj_list(num_points, k, key)
 print(adj_list)
-
-# Example usage
-num_points = 100
-k = 5
-key = random.PRNGKey(42)
-
-adj_list = generate_random_adj_list(num_points, k, key)
-print(adj_list)
-
-# Example usage
-if __name__ == "__main__":
-    points = jnp.array(np.random.rand(100, 128).astype(np.float32))  # JAX-compatible input
-    knn_result = get_knn_indices(points)
-    print(knn_result.shape)
