@@ -9,7 +9,7 @@ from funcutils import rescale_points, transform_knot
 import faiss
 from jax import tree_util
 from graphutils import make_edges
-from knnutils import get_knn_indices
+from knnutils import get_knn_indices, generate_random_adj_list
 from sklearn.decomposition import PCA
 
 def get_faiss_indices(points, k=10):
@@ -298,13 +298,18 @@ class Optimizer:
         return state, loss_history
     
     @staticmethod
-    def create_epoch_loss_function(initial_points, physics: Physics, num_neighbors = 10):
+    def create_epoch_loss_function(initial_points, physics: Physics, num_neighbors = 10, num_random = 1000, attraction_strength = 1.0):
         """Create a function that computes the loss for a given set of points."""
         epsilon = physics.epsilon
+        repulsion_strength = 1 - attraction_strength
         #index_pairs = jnp.array(get_faiss_indices(np.asarray(initial_points)))
         index_pairs, _ = get_knn_indices(np.asarray(initial_points), k=num_neighbors)
+        num_points = initial_points.shape[0]
+        random_pairs = generate_random_adj_list(num_points, num_random)
+        repulsion_pot = make_streamlined(random_pairs, sparse_rep_potential)
+        attraction_pot = make_streamlined(index_pairs, sparse_rep_potential)
         
-        Optimizer.compute_sparse_repulsion = make_streamlined(index_pairs, sparse_rep_potential)
+        Optimizer.compute_sparse_repulsion = lambda points: repulsion_strength * repulsion_pot(points) -attraction_strength * attraction_pot(points)
     
     @staticmethod
     def compute_sparse_repulsion(points, physics: Physics):
@@ -312,9 +317,9 @@ class Optimizer:
         raise NotImplementedError
     
     @staticmethod
-    def run_sparse_epoch(state, physics, optimizer, num_steps):
+    def run_sparse_epoch(state, physics, optimizer, num_steps, num_neighbors = 10, num_random = 1000, attraction_strength = 0.5):
         """Run one sparse epoch using lax.scan."""
-        Optimizer.create_epoch_loss_function(state.points, physics)
+        Optimizer.create_epoch_loss_function(state.points, physics, num_neighbors = num_neighbors, num_random = num_random, attraction_strength = attraction_strength,)
         @jax.jit
         def step(state: OptimizationState, _):
             def loss_fn(points):
@@ -385,7 +390,7 @@ def optimize_graph(graph, *, num_epochs = 10, num_steps = 100, spring_constant=1
     trajectory = jnp.concatenate([x[1] for x in loss_list])
     return points, (loss_histories, trajectory)
 
-def stupid_umap(points, num_neighbors = 10, num_epochs = 10, num_steps = 100, spring_constant=1.0, repulsion_strength=0.1, learning_rate = 0.01, use_distances = False):
+def stupid_umap(points, num_neighbors = 10, num_random = 1000,num_epochs = 10, num_steps = 100, spring_constant=1.0, repulsion_strength=0.1, attraction_strength = 0.5,learning_rate = 0.01, use_distances = False):
     points = np.ascontiguousarray(points.astype(np.float32))
     index_pairs, distances = get_knn_indices(points, k=num_neighbors)
     points = jnp.array(PCA(n_components=2).fit_transform(points))
@@ -401,7 +406,7 @@ def stupid_umap(points, num_neighbors = 10, num_epochs = 10, num_steps = 100, sp
     for i in range(num_epochs):
         print(i)
         state, physics, optimizer = make_optimizer(points, spring_constant=spring_constant, repulsion_strength=repulsion_strength, learning_rate=learning_rate)
-        state, loss_history = Optimizer.run_sparse_epoch(state, physics, optimizer, num_steps=num_steps)
+        state, loss_history = Optimizer.run_sparse_epoch(state, physics, optimizer, num_steps=num_steps, num_neighbors = num_neighbors, num_random = num_random, attraction_strength = attraction_strength)
         loss_list.append(loss_history)
         points = state.points
     return points
