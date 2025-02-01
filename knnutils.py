@@ -99,7 +99,7 @@ def generate_random_adj_list(num_points, k, key=random.PRNGKey(42)):
         neighbors = (i + offsets) % num_points  # ✅ Shift by i and take modulo num_points
         return neighbors
 
-    adj_list = jax.vmap(sample_neighbors)(row_indices, keys)  # ✅ Parallelized sampling
+    adj_list = jax.vmap(sample_neighbors, in_axes = (0, 0))(row_indices, keys)  # ✅ Parallelized sampling
     return adj_list
 
 # Example usage
