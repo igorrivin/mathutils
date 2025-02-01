@@ -2,7 +2,9 @@ import numpy as np
 import faiss
 import jax.numpy as jnp
 import jax.dlpack
-import torch
+import torch 
+
+from mychoice import mychoice_fast
 
 try:
     import cupy as cp
@@ -126,7 +128,7 @@ import jax.random as random
 
 
 
-def generate_random_adj_list(num_points, k, key=random.PRNGKey(42)):
+def generate_random_adj_list_old(num_points, k, key=random.PRNGKey(42)):
     """Generates a (num_points, k) adjacency list where:
        - Each row contains k random neighbors.
        - No row contains its own index (i.e., no self-loops).
@@ -136,10 +138,17 @@ def generate_random_adj_list(num_points, k, key=random.PRNGKey(42)):
     neighbors = (row_indices + rand_offsets) % num_points  # ✅ Ensures no self-loops
     return neighbors
 
-# Example usage
-num_points = 100
-k = 5
-key = random.PRNGKey(42)
+# # Example usage
+# num_points = 100
+# k = 5
+# key = random.PRNGKey(42)
 
-adj_list = generate_random_adj_list(num_points, k, key)
-print(adj_list)
+# adj_list = generate_random_adj_list(num_points, k, key)
+# print(adj_list)
+
+def generate_random_adj_list(num_points, k, key=random.PRNGKey(42)):
+    rand_offsets = mychoice_fast(num_points-1, k, key) +1
+     # ✅ Random offsets (1 to num_points-1)
+    row_indices = jnp.arange(num_points).reshape(-1, 1)  # ✅ Shape (num_points, 1)
+    neighbors = (row_indices + rand_offsets) % num_points  # ✅ Ensures no self-loops
+    return neighbors
