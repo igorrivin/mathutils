@@ -126,7 +126,7 @@ import jax.random as random
 
 
 
-def generate_random_adj_list(num_points, k, key):
+def generate_random_adj_list(num_points, k, key=random.PRNGKey(42)):
     """Generates a (num_points, k) adjacency list where:
        - Each row contains k random neighbors.
        - No row contains its own index (i.e., no self-loops).
